@@ -1,3 +1,4 @@
+// lib/services/paket_service.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/paket_pendakian.dart';
@@ -10,7 +11,7 @@ class PaketService {
 
     if (response.statusCode == 200) {
       final List<dynamic> data = json.decode(response.body);
-      return data.map((json) => PaketPendakian.fromJson(json)).toList();
+      return data.map((json) => PaketPendakian.fromMap(json)).toList();
     } else {
       throw Exception('Gagal memuat data paket pendakian');
     }

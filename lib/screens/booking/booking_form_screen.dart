@@ -87,7 +87,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
         paketId: widget.paket.id,
         paketName: widget.paket.name,
         paketRoute: widget.paket.route, // ✅ TAMBAH
-        paketPrice: widget.paket.price, // ✅ int
+        paketPrice: widget.paket.price.toInt(), // ✅ int
         tanggalBooking: _selectedDate!,
         jumlahOrang: jumlahOrang,
         totalHarga: totalHarga,

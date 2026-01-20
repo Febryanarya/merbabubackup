@@ -1,3 +1,4 @@
+// lib/services/cart_service.dart
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/cart_item_model.dart';
@@ -69,8 +70,12 @@ class CartService {
     );
     
     if (index != -1) {
-      cartItems[index].jumlahOrang = newQuantity;
-      cartItems[index].updateTotal();
+      if (newQuantity < 1) {
+        cartItems.removeAt(index);
+      } else {
+        cartItems[index].jumlahOrang = newQuantity;
+        cartItems[index].updateTotal();
+      }
       await _saveCart(cartItems, prefs);
     }
   }
@@ -95,6 +100,14 @@ class CartService {
   Future<int> getItemCount() async {
     final cartItems = await getCartItems();
     return cartItems.length;
+  }
+
+  // Check if item exists in cart
+  Future<bool> itemExists(String paketId, DateTime tanggalBooking) async {
+    final cartItems = await getCartItems();
+    return cartItems.any((item) => 
+      item.paketId == paketId && _isSameDate(item.tanggalBooking, tanggalBooking)
+    );
   }
 
   // Save cart to SharedPreferences
