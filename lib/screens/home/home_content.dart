@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../services/paket_service.dart';
-import '../../models/paket_pendakian.dart';
-import '../../core/routes/app_routes.dart';
+import 'package:merbabuaccess_app/services/paket_service.dart';
+import 'package:merbabuaccess_app/models/paket_pendakian.dart';
+import 'package:merbabuaccess_app/core/routes/app_routes.dart';
+import 'package:merbabuaccess_app/core/theme/app_theme.dart';
 
 class HomeContent extends StatefulWidget {
   const HomeContent({super.key});
@@ -13,6 +14,7 @@ class HomeContent extends StatefulWidget {
 class _HomeContentState extends State<HomeContent> {
   late Future<List<PaketPendakian>> _paketFuture;
   final PaketService _paketService = PaketService();
+  bool _isRefreshing = false;
 
   @override
   void initState() {
@@ -20,85 +22,300 @@ class _HomeContentState extends State<HomeContent> {
     _paketFuture = _paketService.fetchPaketPendakian();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<PaketPendakian>>(
-      future: _paketFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return _buildLoadingState();
-        }
+  Future<void> _refreshData() async {
+    setState(() {
+      _isRefreshing = true;
+    });
 
-        if (snapshot.hasError) {
-          return _buildErrorState(snapshot.error.toString());
-        }
-
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return _buildEmptyState();
-        }
-
-        final paketList = snapshot.data!;
-        return _buildPaketList(paketList);
-      },
-    );
+    await Future.delayed(const Duration(milliseconds: 800));
+    
+    setState(() {
+      _paketFuture = _paketService.fetchPaketPendakian();
+      _isRefreshing = false;
+    });
   }
 
-  Widget _buildLoadingState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(
-            color: Colors.green[700],
+  // ✅ HELPER: GET IMAGE ASSET BASED ON INDEX
+  String _getImageAsset(int index) {
+    final images = [
+      'assets/images/thekelan.jpg',
+      'assets/images/wekas.jpg', 
+      'assets/images/suwanting.jpeg',
+    ];
+    return images[index % images.length];
+  }
+
+  // ✅ HELPER: GET ROUTE BADGE COLOR
+  Color _getRouteColor(String route) {
+    final routeLower = route.toLowerCase();
+    if (routeLower.contains('thekelan')) return Colors.blue;
+    if (routeLower.contains('wekas')) return Colors.green;
+    if (routeLower.contains('suwanting')) return Colors.orange;
+    return AppTheme.primaryColor;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: _refreshData,
+      color: AppTheme.primaryColor,
+      backgroundColor: Colors.white,
+      displacement: 40,
+      triggerMode: RefreshIndicatorTriggerMode.onEdge,
+      child: CustomScrollView(
+        slivers: [
+          // ✅ HERO SECTION
+          SliverAppBar(
+            expandedHeight: 180,
+            collapsedHeight: 0,
+            toolbarHeight: 0,
+            pinned: false,
+            floating: true,
+            snap: false,
+            backgroundColor: Colors.transparent,
+            foregroundColor: Colors.transparent,
+            flexibleSpace: FlexibleSpaceBar(
+              collapseMode: CollapseMode.parallax,
+              background: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [AppTheme.primaryDark, AppTheme.primaryColor],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(30),
+                    bottomRight: Radius.circular(30),
+                  ),
+                ),
+                child: Stack(
+                  children: [
+                    // Background Pattern
+                    Positioned(
+                      right: 20,
+                      top: 20,
+                      child: Icon(
+                        Icons.terrain,
+                        size: 100,
+                        color: Colors.white.withOpacity(0.15),
+                      ),
+                    ),
+                    Positioned(
+                      left: 30,
+                      bottom: 30,
+                      child: Icon(
+                        Icons.park,
+                        size: 80,
+                        color: Colors.white.withOpacity(0.15),
+                      ),
+                    ),
+                    
+                    // Content
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 40,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Selamat Datang di',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.white.withOpacity(0.9),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'MerbabuAccess',
+                            style: const TextStyle(
+                              fontSize: 32,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Temukan pengalaman pendakian tak terlupakan di Gunung Merbabu',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.white.withOpacity(0.85),
+                            ),
+                            maxLines: 2,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-          const SizedBox(height: 20),
-          const Text(
-            'Memuat paket pendakian...',
-            style: TextStyle(color: Colors.grey),
+
+          // ✅ HEADER SECTION
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+            sliver: SliverToBoxAdapter(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Paket Pendakian',
+                    style: AppTheme.titleLarge.copyWith(
+                      color: AppTheme.textPrimary,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: FutureBuilder<List<PaketPendakian>>(
+                      future: _paketFuture,
+                      builder: (context, snapshot) {
+                        final count = snapshot.hasData ? snapshot.data!.length : 0;
+                        return Text(
+                          '$count Paket',
+                          style: AppTheme.labelMedium.copyWith(
+                            color: AppTheme.primaryColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ✅ PACKAGE LIST
+          FutureBuilder<List<PaketPendakian>>(
+            future: _paketFuture,
+            builder: (context, snapshot) {
+              // LOADING STATE
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return _buildLoadingShimmer();
+              }
+
+              // ERROR STATE
+              if (snapshot.hasError) {
+                return _buildErrorState(snapshot.error.toString());
+              }
+
+              // EMPTY STATE
+              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                return _buildEmptyState();
+              }
+
+              // SUCCESS STATE - BUILD PACKAGE LIST
+              final paketList = snapshot.data!;
+              return _buildPaketGrid(paketList);
+            },
           ),
         ],
       ),
     );
   }
 
+  // ✅ LOADING SHIMMER EFFECT
+  Widget _buildLoadingShimmer() {
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+          childAspectRatio: 0.85,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            return Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: AppTheme.borderRadiusMedium,
+              ),
+            );
+          },
+          childCount: 6,
+        ),
+      ),
+    );
+  }
+
+  // ✅ ERROR STATE
   Widget _buildErrorState(String error) {
-    return Center(
+    return SliverFillRemaining(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(40),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.error_outline,
-              color: Colors.red[400],
-              size: 60,
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Terjadi kesalahan',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.error_outline_rounded,
+                size: 60,
+                color: Colors.red[400],
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 24),
             Text(
-              error,
+              'Oops! Terjadi Kesalahan',
+              style: AppTheme.titleLarge.copyWith(
+                color: AppTheme.textPrimary,
+              ),
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.grey),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+            Text(
+              'Gagal memuat data paket pendakian',
+              style: AppTheme.bodyMedium.copyWith(
+                color: AppTheme.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Text(
+                error,
+                style: AppTheme.bodySmall.copyWith(
+                  color: Colors.red[400],
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: 32),
             ElevatedButton.icon(
-              onPressed: () {
-                setState(() {
-                  _paketFuture = _paketService.fetchPaketPendakian();
-                });
-              },
-              icon: const Icon(Icons.refresh),
+              onPressed: _refreshData,
+              icon: const Icon(Icons.refresh, size: 20),
               label: const Text('Coba Lagi'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green[700],
+                backgroundColor: AppTheme.errorColor,
                 foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppTheme.borderRadiusMedium,
+                ),
               ),
             ),
           ],
@@ -107,51 +324,99 @@ class _HomeContentState extends State<HomeContent> {
     );
   }
 
+  // ✅ EMPTY STATE
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.search_off,
-            size: 80,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'Tidak ada paket tersedia',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+    return SliverFillRemaining(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.search_off_rounded,
+                size: 70,
+                color: Colors.grey[400],
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Coba lagi nanti ya',
-            style: TextStyle(color: Colors.grey),
-          ),
-        ],
+            const SizedBox(height: 32),
+            Text(
+              'Belum Ada Paket Tersedia',
+              style: AppTheme.titleLarge.copyWith(
+                color: AppTheme.textPrimary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Text(
+                'Saat ini belum ada paket pendakian yang tersedia. Silakan cek kembali nanti atau hubungi admin untuk informasi lebih lanjut.',
+                style: AppTheme.bodyMedium.copyWith(
+                  color: AppTheme.textSecondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 32),
+            OutlinedButton.icon(
+              onPressed: _refreshData,
+              icon: const Icon(Icons.refresh, size: 20),
+              label: const Text('Refresh'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.primaryColor,
+                side: BorderSide(color: AppTheme.primaryColor, width: 1.5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 16,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppTheme.borderRadiusMedium,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildPaketList(List<PaketPendakian> paketList) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: paketList.length,
-      itemBuilder: (context, index) {
-        final paket = paketList[index];
-        return _buildPaketCard(paket);
-      },
+  // ✅ PACKAGE GRID (CARDS)
+  Widget _buildPaketGrid(List<PaketPendakian> paketList) {
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+          childAspectRatio: 0.85,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            final paket = paketList[index];
+            return _buildPaketCard(paket, index);
+          },
+          childCount: paketList.length,
+        ),
+      ),
     );
   }
 
-  Widget _buildPaketCard(PaketPendakian paket) {
+  // ✅ PACKAGE CARD (WITH ASSETS IMAGES)
+  Widget _buildPaketCard(PaketPendakian paket, int index) {
+    final routeColor = _getRouteColor(paket.route);
+    
     return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      elevation: 3,
+      elevation: 4,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppTheme.borderRadiusLarge,
       ),
       child: InkWell(
         onTap: () {
@@ -161,133 +426,229 @@ class _HomeContentState extends State<HomeContent> {
             arguments: paket,
           );
         },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppTheme.borderRadiusLarge,
         child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Image
+              // ✅ IMAGE SECTION WITH ASSETS
               ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  paket.image,
-                  width: 80,
-                  height: 80,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Container(
-                      width: 80,
-                      height: 80,
-                      color: Colors.grey[200],
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          value: loadingProgress.expectedTotalBytes != null
-                              ? loadingProgress.cumulativeBytesLoaded /
-                                  loadingProgress.expectedTotalBytes!
-                              : null,
+                borderRadius: BorderRadius.circular(12),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      image: DecorationImage(
+                        image: AssetImage(_getImageAsset(index)),
+                        fit: BoxFit.cover,
+                        colorFilter: ColorFilter.mode(
+                          Colors.black.withOpacity(0.1),
+                          BlendMode.darken,
                         ),
                       ),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      width: 80,
-                      height: 80,
-                      color: Colors.grey[200],
-                      child: Icon(
-                        Icons.landscape,
-                        color: Colors.grey[400],
-                        size: 40,
-                      ),
-                    );
-                  },
+                    ),
+                    child: Stack(
+                      children: [
+                        // Gradient Overlay
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.bottomCenter,
+                              end: Alignment.topCenter,
+                              colors: [
+                                Colors.black.withOpacity(0.3),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
+                        ),
+                        
+                        // RATING BADGE
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.9),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.star,
+                                  size: 12,
+                                  color: Colors.amber[600],
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  '4.8',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey[800],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        
+                        // JALUR BADGE
+                        Positioned(
+                          bottom: 8,
+                          left: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: routeColor.withOpacity(0.9),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              paket.route.toUpperCase(),
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(width: 16),
-              
-              // Content
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      paket.name,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+              const SizedBox(height: 12),
+
+              // PACKAGE NAME
+              Text(
+                paket.name,
+                style: AppTheme.labelLarge.copyWith(
+                  color: AppTheme.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 8),
+
+              // DURATION & ROUTE
+              Row(
+                children: [
+                  Icon(
+                    Icons.timer_outlined,
+                    size: 12,
+                    color: AppTheme.textSecondary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    paket.duration,
+                    style: AppTheme.labelSmall.copyWith(
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+
+              Row(
+                children: [
+                  Icon(
+                    Icons.route_outlined,
+                    size: 12,
+                    color: AppTheme.textSecondary,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'Jalur ${paket.route}',
+                      style: AppTheme.labelSmall.copyWith(
+                        color: AppTheme.textSecondary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 8),
-                    
-                    Row(
-                      children: [
-                        Icon(Icons.route, size: 14, color: Colors.grey[600]),
-                        const SizedBox(width: 4),
-                        Text(
-                          paket.route,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey[700],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    
-                    Row(
-                      children: [
-                        Icon(Icons.timer, size: 14, color: Colors.grey[600]),
-                        const SizedBox(width: 4),
-                        Text(
-                          paket.duration,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey[700],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    
-                    Row(
-                      children: [
-                        Icon(Icons.people, size: 14, color: Colors.grey[600]),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${paket.quota} orang',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey[700],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    
-                    Text(
-                      'Rp ${paket.price.toStringAsFixed(0)}',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green[700],
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              
-              // Chevron
-              const Icon(
-                Icons.chevron_right,
-                color: Colors.grey,
+              const SizedBox(height: 8),
+
+              // PRICE & BOOK BUTTON
+              const Spacer(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Mulai dari',
+                        style: AppTheme.labelSmall.copyWith(
+                          color: AppTheme.textDisabled,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Rp ${_formatPrice(paket.price)}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.primaryColor.withOpacity(0.3),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 18,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  // ✅ HELPER: FORMAT PRICE WITH COMMAS
+  String _formatPrice(double price) {
+    return price.toStringAsFixed(0).replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]}.',
     );
   }
 }

@@ -6,7 +6,7 @@ class WeatherService {
   static const String _apiKey = 'a75515134c6f98d66a1ee295202948fb'; // API KEY
   static const String _baseUrl = 'https://api.openweathermap.org/data/2.5';
   static const double _latitude = -7.4500;
-  static const double _longitude = 110.4333;
+  static const double _longitude = 110.4400;
 
   Future<WeatherData> fetchWeather() async {
     try {

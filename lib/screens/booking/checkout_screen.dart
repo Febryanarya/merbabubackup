@@ -99,20 +99,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       
       // Convert cart items to bookings
       for (final item in cartItems) {
-        final booking = Booking(
-          userId: user.uid,
-          userName: user.displayName ?? user.email!.split('@')[0],
-          userEmail: user.email ?? '',
-          paketId: item.paketId,
-          paketName: item.paketName,
-          paketRoute: item.paketRoute, // ✅ TAMBAH PAKETROUTE
-          paketPrice: item.paketPrice.toInt(), // ✅ Convert ke int
-          tanggalBooking: item.tanggalBooking,
-          jumlahOrang: item.jumlahOrang,
-          totalHarga: item.totalHarga,
-          status: 'pending_payment',
-          createdAt: DateTime.now(),
-        );
+      final booking = Booking(
+        userId: user.uid,
+        userName: user.displayName ?? user.email!.split('@')[0],
+        userEmail: user.email ?? '',
+        paketId: item.paketId,
+        paketName: item.paketName,
+        paketRoute: item.paketRoute,
+        paketPrice: item.paketPrice.toInt(),
+        tanggalBooking: item.tanggalBooking,
+        jumlahOrang: item.jumlahOrang,
+        totalHarga: item.totalHarga,
+        status: 'pending_payment',
+        createdAt: DateTime.now(), userPhone: '', paymentMethod: '',
+      );
 
         await _bookingService.createBooking(booking);
       }

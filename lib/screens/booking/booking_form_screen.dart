@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/paket_pendakian.dart';
 import '../../models/booking_model.dart';
-import '../../models/cart_item_model.dart';
-import '../../services/booking_service.dart';
-import '../../services/cart_service.dart';
 import '../../core/routes/app_routes.dart';
+import '../../core/theme/app_theme.dart';
 
 class BookingFormScreen extends StatefulWidget {
   final PaketPendakian paket;
@@ -18,442 +17,684 @@ class BookingFormScreen extends StatefulWidget {
 }
 
 class _BookingFormScreenState extends State<BookingFormScreen> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final _formKey = GlobalKey<FormState>();
-  final BookingService _bookingService = BookingService();
-  final CartService _cartService = CartService();
 
-  // Form controllers
-  final _namaController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _jumlahOrangController = TextEditingController(text: '1');
-  DateTime? _selectedDate;
+  // ✅ FORM DATA
+  final TextEditingController _fullNameController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _idNumberController = TextEditingController();
+  final TextEditingController _emergencyContactController =
+      TextEditingController();
+  final TextEditingController _specialRequestController =
+      TextEditingController();
 
+  DateTime _selectedDate = DateTime.now().add(const Duration(days: 7));
+  int _jumlahOrang = 1;
+  String _selectedPaymentMethod = 'bank_transfer';
+
+  // ✅ UI STATE
   bool _isLoading = false;
+  bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
-    _selectedDate = DateTime.now().add(const Duration(days: 7));
   }
 
-  void _loadUserData() async {
-    final user = FirebaseAuth.instance.currentUser;
+  Future<void> _loadUserData() async {
+    final user = _auth.currentUser;
     if (user != null) {
-      setState(() {
-        _namaController.text = user.displayName ?? user.email!.split('@')[0];
-        _emailController.text = user.email ?? '';
-      });
+      _emailController.text = user.email ?? '';
+      
+      // Get additional user data from Firestore if available
+      try {
+        final userDoc = await _firestore.collection('users').doc(user.uid).get();
+        if (userDoc.exists) {
+          final data = userDoc.data()!;
+          _fullNameController.text = data['fullName'] ?? user.displayName ?? '';
+          _phoneController.text = data['phone'] ?? '';
+          _idNumberController.text = data['idNumber'] ?? '';
+        } else {
+          // Use display name from Firebase Auth
+          _fullNameController.text = user.displayName ?? '';
+        }
+      } catch (e) {
+        print('Error loading user data: $e');
+        // Fallback to Firebase Auth data
+        _fullNameController.text = user.displayName ?? '';
+      }
     }
   }
 
-  Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate ?? DateTime.now().add(const Duration(days: 7)),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (picked != null && picked != _selectedDate) {
-      setState(() {
-        _selectedDate = picked;
-      });
-    }
-  }
-
-  void _submitBooking() async {
+  Future<void> _submitBooking() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pilih tanggal booking terlebih dahulu')),
-      );
-      return;
-    }
 
-    setState(() => _isLoading = true);
+    setState(() => _isSubmitting = true);
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception('User tidak login');
-
-      final jumlahOrang = int.tryParse(_jumlahOrangController.text) ?? 1;
-      // ✅ FIX: Hitung total harga
-      final totalHarga = (widget.paket.price * jumlahOrang).toDouble();
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('User tidak login');
+      }
 
       final booking = Booking(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
         userId: user.uid,
-        userName: _namaController.text.trim(),
+        userName: _fullNameController.text.trim(),
         userEmail: _emailController.text.trim(),
-        paketId: widget.paket.id,
-        paketName: widget.paket.name,
-        paketRoute: widget.paket.route, // ✅ TAMBAH
-        paketPrice: widget.paket.price.toInt(), // ✅ int
-        tanggalBooking: _selectedDate!,
-        jumlahOrang: jumlahOrang,
-        totalHarga: totalHarga,
-        status: 'pending',
-        createdAt: DateTime.now(),
-      );
-
-      await _bookingService.createBooking(booking);
-
-      // Success
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Booking berhasil! Cek di riwayat booking.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  Future<void> _addToCart() async {
-    if (!_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Isi form dengan benar')),
-      );
-      return;
-    }
-    
-    if (_selectedDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pilih tanggal booking terlebih dahulu')),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final jumlahOrang = int.tryParse(_jumlahOrangController.text) ?? 1;
-
-      final cartItem = CartItem(
+        userPhone: _phoneController.text.trim(),
         paketId: widget.paket.id,
         paketName: widget.paket.name,
         paketRoute: widget.paket.route,
-        paketPrice: widget.paket.price.toDouble(), // ✅ Convert ke double
-        imageUrl: widget.paket.image,
-        tanggalBooking: _selectedDate!,
-        jumlahOrang: jumlahOrang,
+        paketPrice: widget.paket.price.toInt(),
+        tanggalBooking: _selectedDate,
+        jumlahOrang: _jumlahOrang,
+        totalHarga: widget.paket.price * _jumlahOrang,
+        paymentMethod: _selectedPaymentMethod,
+        status: 'pending',
+        createdAt: DateTime.now(),
+        specialRequest: _specialRequestController.text.trim(),
+        emergencyContact: _emergencyContactController.text.trim(),
+        idNumber: _idNumberController.text.trim(),
       );
-      
-      await _cartService.addToCart(cartItem);
-      
+
+      // Save to Firestore
+      await _firestore
+          .collection('bookings')
+          .doc(booking.id)
+          .set(booking.toMap());
+
+      // Update user profile data if needed
+      if (_fullNameController.text.isNotEmpty ||
+          _phoneController.text.isNotEmpty ||
+          _idNumberController.text.isNotEmpty) {
+        await _firestore.collection('users').doc(user.uid).set({
+          'fullName': _fullNameController.text.trim(),
+          'phone': _phoneController.text.trim(),
+          'idNumber': _idNumberController.text.trim(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
+      // Show success message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${widget.paket.name} ditambahkan ke keranjang'),
-            backgroundColor: Colors.green,
+            content: const Text('Booking berhasil dibuat!'),
+            backgroundColor: AppTheme.successColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
-        
-        // Tampilkan pilihan
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Berhasil!'),
-            content: const Text('Paket telah ditambahkan ke keranjang.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Lanjutkan Belanja'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context); // Close dialog
-                  Navigator.pushNamed(context, AppRoutes.cart);
-                },
-                child: const Text('Lihat Keranjang'),
-              ),
-            ],
-          ),
+
+        // Navigate to ticket screen
+        Navigator.pushReplacementNamed(
+          context,
+          AppRoutes.ticket,
+          arguments: booking,
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
+            content: Text('Gagal membuat booking: $e'),
+            backgroundColor: AppTheme.errorColor,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
     } finally {
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() => _isSubmitting = false);
       }
     }
+  }
+
+  // ✅ PRICE CALCULATION
+  double get _totalPrice => widget.paket.price * _jumlahOrang;
+
+  String _formatPrice(double price) {
+    return NumberFormat('#,##0', 'id_ID').format(price);
   }
 
   @override
   Widget build(BuildContext context) {
-    final jumlahOrang = int.tryParse(_jumlahOrangController.text) ?? 1;
-    final totalHarga = (widget.paket.price * jumlahOrang).toStringAsFixed(0);
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Form Booking'),
+        title: const Text('Form Pemesanan'),
+        backgroundColor: AppTheme.primaryColor,
+        foregroundColor: Colors.white,
+        elevation: 0,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
+      body: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // INFO PAKET
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.paket.name,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Rute: ${widget.paket.route}'),
-                          Text(
-                            'Rp ${widget.paket.price.toStringAsFixed(0)}/orang',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // FORM INPUT
-              TextFormField(
-                controller: _namaController,
-                decoration: const InputDecoration(
-                  labelText: 'Nama Lengkap',
-                  prefixIcon: Icon(Icons.person),
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Masukkan nama lengkap';
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 16),
-
-              TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  prefixIcon: Icon(Icons.email),
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Masukkan email';
-                  }
-                  if (!value.contains('@')) {
-                    return 'Email tidak valid';
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 16),
-
-              // TANGGAL BOOKING
-              InkWell(
-                onTap: () => _selectDate(context),
-                child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: 'Tanggal Pendakian',
-                    prefixIcon: Icon(Icons.calendar_today),
-                    border: OutlineInputBorder(),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        _selectedDate == null
-                            ? 'Pilih tanggal'
-                            : DateFormat('dd MMMM yyyy').format(_selectedDate!),
-                      ),
-                      const Icon(Icons.calendar_month, color: Colors.grey),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              TextFormField(
-                controller: _jumlahOrangController,
-                decoration: const InputDecoration(
-                  labelText: 'Jumlah Orang',
-                  prefixIcon: Icon(Icons.people),
-                  border: OutlineInputBorder(),
-                  suffixText: 'orang',
-                ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Masukkan jumlah orang';
-                  }
-                  final jumlah = int.tryParse(value);
-                  if (jumlah == null || jumlah < 1) {
-                    return 'Minimal 1 orang';
-                  }
-                  if (jumlah > 10) {
-                    return 'Maksimal 10 orang per booking';
-                  }
-                  return null;
-                },
-                onChanged: (value) {
-                  setState(() {});
-                },
-              ),
-
-              const SizedBox(height: 32),
-
-              // TOTAL HARGA
+              // ✅ PACKAGE SUMMARY
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.green.shade50,
+                  color: AppTheme.primaryColor.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.green.shade200),
+                  border: Border.all(
+                    color: AppTheme.primaryColor.withOpacity(0.3),
+                  ),
                 ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'Total Harga',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.terrain,
+                        size: 30,
+                        color: AppTheme.primaryColor,
                       ),
                     ),
-                    Text(
-                      'Rp $totalHarga',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.paket.name,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Jalur ${widget.paket.route} • ${widget.paket.duration}',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Rp ${_formatPrice(widget.paket.price)} / orang',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.primaryColor,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(height: 24),
 
-              const SizedBox(height: 32),
+              // ✅ SECTION: DATA DIRI
+              Text(
+                'Data Diri Pemesan',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Lengkapi data diri untuk proses booking',
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 16),
 
-              // DUA TOMBOL: TAMBAH KE KERANJANG & BOOKING LANGSUNG
-              Column(
-                children: [
-                  // TOMBOL TAMBAH KE KERANJANG
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isLoading ? null : _addToCart,
-                      icon: const Icon(Icons.add_shopping_cart),
-                      label: const Text(
-                        'Tambah ke Keranjang',
-                        style: TextStyle(fontSize: 16),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
+              // NAMA LENGKAP
+              TextFormField(
+                controller: _fullNameController,
+                decoration: InputDecoration(
+                  labelText: 'Nama Lengkap',
+                  prefixIcon: Icon(Icons.person, color: AppTheme.textSecondary),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Nama lengkap harus diisi';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
 
-                  const SizedBox(height: 12),
+              // EMAIL
+              TextFormField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: InputDecoration(
+                  labelText: 'Email',
+                  prefixIcon: Icon(Icons.email, color: AppTheme.textSecondary),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Email harus diisi';
+                  }
+                  if (!value.contains('@')) {
+                    return 'Format email tidak valid';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
 
-                  // TOMBOL BOOKING LANGSUNG
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isLoading ? null : _submitBooking,
-                      icon: _isLoading
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
+              // NOMOR TELEPON
+              TextFormField(
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  labelText: 'Nomor Telepon',
+                  prefixIcon: Icon(Icons.phone, color: AppTheme.textSecondary),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Nomor telepon harus diisi';
+                  }
+                  if (value.length < 10) {
+                    return 'Nomor telepon minimal 10 digit';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // NOMOR KTP/SIM
+              TextFormField(
+                controller: _idNumberController,
+                decoration: InputDecoration(
+                  labelText: 'Nomor KTP/SIM',
+                  prefixIcon: Icon(Icons.badge, color: AppTheme.textSecondary),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Nomor identitas harus diisi';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // KONTAK DARURAT
+              TextFormField(
+                controller: _emergencyContactController,
+                decoration: InputDecoration(
+                  labelText: 'Kontak Darurat (Opsional)',
+                  prefixIcon:
+                      Icon(Icons.emergency, color: AppTheme.textSecondary),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // ✅ SECTION: DETAIL PENDAKIAN
+              Text(
+                'Detail Pendakian',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Tentukan tanggal dan jumlah pendaki',
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // TANGGAL PENDAKIAN
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Tanggal Pendakian',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      InkWell(
+                        onTap: () async {
+                          final pickedDate = await showDatePicker(
+                            context: context,
+                            initialDate: _selectedDate,
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime.now()
+                                .add(const Duration(days: 365)),
+                          );
+                          if (pickedDate != null) {
+                            setState(() => _selectedDate = pickedDate);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.calendar_today,
+                                  color: AppTheme.primaryColor),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  DateFormat('dd MMMM yyyy')
+                                      .format(_selectedDate),
+                                  style: const TextStyle(fontSize: 16),
+                                ),
                               ),
-                            )
-                          : const Icon(Icons.rocket_launch),
-                      label: Text(
-                        _isLoading ? 'Memproses...' : 'Booking Langsung',
-                        style: const TextStyle(fontSize: 16),
+                              Icon(Icons.arrow_drop_down,
+                                  color: Colors.grey.shade400),
+                            ],
+                          ),
+                        ),
                       ),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        backgroundColor: const Color(0xFF1B5E20),
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
+                    ],
                   ),
+                ),
+              ),
+              const SizedBox(height: 16),
 
-                  const SizedBox(height: 16),
-
-                  // INFO
-                  Card(
-                    color: Colors.grey[50],
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
+              // JUMLAH PENDAKI
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Jumlah Pendaki',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
                         children: [
-                          const Icon(Icons.info, color: Colors.blue),
-                          const SizedBox(width: 12),
-                          Expanded(
+                          IconButton(
+                            onPressed: () {
+                              if (_jumlahOrang > 1) {
+                                setState(() => _jumlahOrang--);
+                              }
+                            },
+                            icon: const Icon(Icons.remove_circle),
+                            color: Colors.red,
+                          ),
+                          Container(
+                            width: 60,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey.shade300),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                             child: Text(
-                              '"Tambah ke Keranjang" untuk booking multiple paket. '
-                              '"Booking Langsung" untuk langsung konfirmasi.',
-                              style: TextStyle(
-                                color: Colors.grey[700],
-                                fontSize: 12,
+                              '$_jumlahOrang',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
                               ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () {
+                              if (_jumlahOrang < widget.paket.quota) {
+                                setState(() => _jumlahOrang++);
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text(
+                                        'Telah mencapai kuota maksimum'),
+                                    backgroundColor: AppTheme.warningColor,
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.add_circle),
+                            color: Colors.green,
+                          ),
+                          const Spacer(),
+                          Text(
+                            'Kuota: ${widget.paket.quota} orang',
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // METODE PEMBAYARAN
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Metode Pembayaran',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Radio(
+                            value: 'bank_transfer',
+                            groupValue: _selectedPaymentMethod,
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedPaymentMethod = value.toString();
+                              });
+                            },
+                            activeColor: AppTheme.primaryColor,
+                          ),
+                          const Text('Transfer Bank'),
+                          const SizedBox(width: 20),
+                          Radio(
+                            value: 'qris',
+                            groupValue: _selectedPaymentMethod,
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedPaymentMethod = value.toString();
+                              });
+                            },
+                            activeColor: AppTheme.primaryColor,
+                          ),
+                          const Text('QRIS'),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // PERMINTAAN KHUSUS
+              TextFormField(
+                controller: _specialRequestController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  labelText: 'Permintaan Khusus (Opsional)',
+                  alignLabelWithHint: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // ✅ SECTION: RINGKASAN HARGA
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Ringkasan Pembayaran',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Harga per orang',
+                            style: TextStyle(
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                          Text(
+                            'Rp ${_formatPrice(widget.paket.price)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
                       ),
-                    ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Jumlah orang',
+                            style: TextStyle(
+                              color: AppTheme.textSecondary,
+                            ),
+                          ),
+                          Text(
+                            '$_jumlahOrang x',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Total Pembayaran',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                          Text(
+                            'Rp ${_formatPrice(_totalPrice)}',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.primaryColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
+              const SizedBox(height: 24),
+
+              // ✅ SUBMIT BUTTON
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isSubmitting ? null : _submitBooking,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 4,
+                  ),
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'KONFIRMASI BOOKING',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 20),
             ],
           ),
         ),
